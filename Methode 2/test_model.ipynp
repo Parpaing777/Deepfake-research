@@ -1,0 +1,109 @@
+import cv2
+import numpy as np
+import os
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import joblib
+
+
+
+def extract_faces_from_videos(video_paths, output_dir, frames_per_video=5):
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    os.makedirs(output_dir, exist_ok=True)
+
+    for video_path in video_paths:
+        cap = cv2.VideoCapture(video_path)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_interval = max(1, frame_count // frames_per_video)
+
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        count = 0
+
+        for i in range(frames_per_video):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i * frame_interval)
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+
+            for j, (x, y, w, h) in enumerate(faces):
+                face = frame[y:y + h, x:x + w]
+                face_path = os.path.join(output_dir, f"{video_name}_face_{count}.jpg")
+                cv2.imwrite(face_path, face)
+                count += 1
+
+        cap.release()
+
+# 2. Extraction des caractéristiques basées sur le bruit
+def extract_noise_features(image_path):
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        return None
+
+    noise = image - cv2.GaussianBlur(image, (5, 5), 0)
+    features = [
+        np.mean(noise),
+        np.var(noise),
+        np.median(noise),
+        np.percentile(noise, 10),
+        np.percentile(noise, 90)
+    ]
+    return features
+# Charger le modèle sauvegardé
+clf = joblib.load("/content/drive/MyDrive/Colab Notebooks/model.pkl")
+
+# Dossier contenant les vidéos de test
+test_video_dir = "/content/drive/MyDrive/Colab Notebooks/video_test"
+test_faces_dir = "/content/drive/MyDrive/Colab Notebooks/test_faces"
+
+# Étape 1 : Extraire les visages des vidéos de test
+os.makedirs(test_faces_dir, exist_ok=True)
+test_videos = [os.path.join(test_video_dir, f) for f in os.listdir(test_video_dir) if f.endswith(('.mp4', '.avi', '.mov'))]
+# extract_faces_from_videos(test_videos, test_faces_dir)
+
+# Étape 2 : Prédire pour chaque vidéo
+results = {}
+for video in test_videos:
+    video_name = os.path.splitext(os.path.basename(video))[0]
+    video_faces = [os.path.join(test_faces_dir, f) for f in os.listdir(test_faces_dir) if f.startswith(video_name)]
+
+    if not video_faces:
+        results[video_name] = "Pas de visage détecté"
+        continue
+
+    # Extraire les caractéristiques des visages
+    features = [extract_noise_features(face) for face in video_faces]
+    features = [f for f in features if f is not None]  # Exclure les erreurs d'extraction
+
+    if not features:
+        results[video_name] = "Pas de caractéristiques extraites"
+        continue
+
+    # Prédire pour chaque visage
+    predictions = clf.predict(features)
+
+    # Déterminer le label final (majorité des prédictions)
+    final_prediction = "vrai" if np.mean(predictions) < 0.5 else "fake"
+    results[video_name] = final_prediction
+
+# Étape 3 : Afficher les résultats
+for video_name, prediction in results.items():
+    print(f"Vidéo : {video_name} - Résultat : {prediction}")
+
+
+
+
+# Vidéo : 14_15__hugging_happy__3FRJCJ0V - Résultat : fake
+# Vidéo : 07_21__outside_talking_still_laughing__K7KXUHMU - Résultat : fake
+# Vidéo : 11_06__outside_talking_pan_laughing__MX659QU8 - Résultat : fake
+# Vidéo : 12_06__outside_talking_still_laughing__3K21NFNM - Résultat : fake
+# Vidéo : 06_14__walking_down_indoor_hall_disgust__8U9ULZDT - Résultat : fake
+# Vidéo : 27__walking_down_street_outside_angry - Résultat : vrai
+# Vidéo : 22__secret_conversation - Résultat : vrai
+# Vidéo : 08__outside_talking_still_laughing - Résultat : vrai
+# Vidéo : 10__talking_angry_couch - Résultat : vrai
+# Vidéo : 24__talking_angry_couch - Résultat : vrai
