@@ -1,6 +1,7 @@
 # Deepfake-research
 # Peut-on détecter les Deepfakes en analysant la palette des couleurs d’image ?
 Github repository for the scripts used in the group research project of M1 Semester 1
+
 Pour voir la version complete avec toutes les videos et les frames :
 
 Lien vers Colab(code et les vidéos) :
